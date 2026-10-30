@@ -59,13 +59,18 @@ What keeps it light and quick:
 
 ## Install
 
-Floe builds from source in a few seconds. You need macOS 14 or later on Apple Silicon and Apple's command line tools:
+With [Homebrew](https://brew.sh), on macOS 14 or later with Apple Silicon:
 
 ```sh
-xcode-select --install   # skip if you already have them
+brew install --cask cyberice2077/floe/floe
 ```
 
-Then:
+Then open Floe from Applications. Floe is signed but not notarized (that takes a paid Apple developer account), so the cask clears the download's quarantine flag for you; otherwise macOS would refuse to open it.
+
+<details>
+<summary><b>Build from source instead</b></summary>
+
+You need Apple's command line tools (`xcode-select --install`). Then:
 
 ```sh
 git clone https://github.com/CyberIce2077/floe.git
@@ -73,6 +78,10 @@ cd floe
 make cert      # once: creates a local signing identity so macOS remembers Floe's permissions
 make install   # builds Floe, copies it to /Applications and opens it
 ```
+
+To update, `git pull && make install`.
+
+</details>
 
 ### Permissions
 
@@ -87,15 +96,17 @@ Each row switches to *Allowed* as soon as you grant it. Until Accessibility is a
 
 <p align="center">
   <img src="docs/permissions.png" width="400" alt="Settings on first launch: Allow buttons for Accessibility and Screen Recording, and the features that need Accessibility locked">
-</p> **Remove All Permissions…** in Settings revokes both and quits Floe.
+</p>
+
+**Remove All Permissions…** in Settings revokes both and quits Floe.
 
 ### Update
 
 ```sh
-git pull && make install
+brew upgrade floe
 ```
 
-Your permissions carry over between builds thanks to `make cert`.
+Every release is signed with the same identity, so macOS keeps Floe's permissions across updates.
 
 ### Uninstall
 
@@ -103,10 +114,10 @@ Your permissions carry over between builds thanks to `make cert`.
 2. Then:
 
 ```sh
-rm -rf /Applications/Floe.app
-defaults delete io.github.cyberice2077.floe
-security delete-keychain ~/Library/Keychains/floe-signing.keychain-db
+brew uninstall --zap floe
 ```
+
+If you built from source, remove it with `rm -rf /Applications/Floe.app`, `defaults delete io.github.cyberice2077.floe` and `security delete-keychain ~/Library/Keychains/floe-signing.keychain-db`.
 
 ## Keys
 

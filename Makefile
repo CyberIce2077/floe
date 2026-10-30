@@ -1,5 +1,7 @@
 APP := build/Floe.app
 BIN := $(APP)/Contents/MacOS/Floe
+VERSION := $(shell /usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" Info.plist)
+ZIP := build/Floe-$(VERSION).zip
 ID := io.github.cyberice2077.floe
 KC := $(HOME)/Library/Keychains/floe-signing.keychain-db
 
@@ -11,7 +13,8 @@ endif
 SIGN ?= -
 
 # Tracks the binary, not the bundle folder: the folder's timestamp never changes, so make would rebuild every time.
-$(BIN): Sources/*.swift Info.plist Resources/AppIcon.icns
+# The keychain is listed so `make cert` re-signs a build that was signed ad-hoc.
+$(BIN): Sources/*.swift Info.plist Resources/AppIcon.icns $(wildcard $(KC))
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	swiftc -O -swift-version 5 -target arm64-apple-macos14 Sources/*.swift -o $(BIN)
 	cp Info.plist $(APP)/Contents/
@@ -32,6 +35,13 @@ install: $(BIN)
 	cp -R $(APP) /Applications/
 	open /Applications/Floe.app
 
+# The zip the Homebrew cask downloads. Every release must carry the same signature, or users lose their permissions.
+release: $(BIN)
+	@[ "$(SIGN)" = "Floe Developer" ] || { echo "Releases need the Floe Developer identity: run make cert first."; exit 1; }
+	rm -f $(ZIP)
+	ditto -c -k --keepParent $(APP) $(ZIP)
+	@shasum -a 256 $(ZIP)
+
 cert:
 	@[ ! -e $(KC) ] || { echo "Signing identity already set up."; exit 0; }; \
 	d=$$(mktemp -d); trap 'rm -rf $$d' EXIT; \
@@ -47,4 +57,4 @@ cert:
 clean:
 	rm -rf build
 
-.PHONY: install cert clean
+.PHONY: install release cert clean
