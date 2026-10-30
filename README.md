@@ -83,7 +83,11 @@ On first launch Floe opens Settings and lists exactly what it needs, each with a
 | **Accessibility** | ⌘Tab, mouse scrolling, maximize and quit on close |
 | **Screen Recording** *(optional)* | live window previews in ⌘Tab. Without it you still get icons and window counts. |
 
-Each row switches to *Allowed* as soon as you grant it. Until Accessibility is allowed, the features that need it are locked: their switches keep your choice but stay dimmed, with a lock you can click to allow it, and they unlock the moment you do. **Remove All Permissions…** in Settings revokes both and quits Floe.
+Each row switches to *Allowed* as soon as you grant it. Until Accessibility is allowed, the features that need it are locked: their switches keep your choice but stay dimmed, with a lock you can click to allow it, and they unlock the moment you do.
+
+<p align="center">
+  <img src="docs/permissions.png" width="400" alt="Settings on first launch: Allow buttons for Accessibility and Screen Recording, and the features that need Accessibility locked">
+</p> **Remove All Permissions…** in Settings revokes both and quits Floe.
 
 ### Update
 
