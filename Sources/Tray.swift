@@ -132,6 +132,7 @@ final class Tray: NSObject {
     private var permissionCard: NSView!
     private var monitors: [Any] = []
     private var timer: Timer?
+    private var openedAt: TimeInterval = 0
 
     private lazy var panel: KeyPanel = {
         let p = KeyPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -161,9 +162,14 @@ final class Tray: NSObject {
 
     override init() {
         super.init()
-        item.button?.target = self
-        item.button?.action = #selector(toggle)
-        item.button?.sendAction(on: .leftMouseDown) // open on press, like a menu
+        if #available(macOS 27, *) {
+            // The menu bar opens and closes the panel like one of its menus, and draws the icon's highlight.
+            item.expandedInterfaceDelegate = self
+        } else {
+            item.button?.target = self
+            item.button?.action = #selector(toggle)
+            item.button?.sendAction(on: .leftMouseDown) // open on press, like a menu
+        }
         guard let button = item.button else { return }
         button.image = menuBarIcon
         glint.translatesAutoresizingMaskIntoConstraints = false
@@ -197,14 +203,17 @@ final class Tray: NSObject {
         place()
         panel.orderFrontRegardless()
         panel.makeKey()
-        item.button?.highlight(true)
+        openedAt = ProcessInfo.processInfo.systemUptime
+        if #unavailable(macOS 27) { item.button?.highlight(true) }
         readStats(disk: true)
         timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readStats(disk: false) }
         RunLoop.main.add(timer!, forMode: .common)
         monitors = [
-            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
-                guard let self, !onIcon else { return }
-                close()
+            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] e in
+                // The click that opened the panel reaches this monitor too, just after; skip it.
+                guard let self, e.timestamp > openedAt else { return }
+                // On macOS 27 the menu bar keeps a click on the open item to itself, so closing on it is up to Floe.
+                if #available(macOS 27, *) { close() } else if !onIcon { close() }
             }!,
             NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
                 guard let self else { return e }
@@ -216,15 +225,21 @@ final class Tray: NSObject {
         ]
     }
 
-    // A click on the icon is left to toggle(); if a monitor closed the panel first, toggle would reopen it.
+    // Before macOS 27 a click on the icon is left to toggle(); if a monitor closed the panel first, toggle would reopen it.
     // Checked by position, since the event's window isn't reliably the status button's.
     private var onIcon: Bool {
         item.button?.window?.frame.contains(NSEvent.mouseLocation) ?? false
     }
 
+    // Closing from Floe's side (outside click, Esc, a button) also ends the menu bar's session, so its highlight goes.
     private func close() {
+        if #available(macOS 27, *) { item.expandedInterfaceSession?.cancel() }
+        hide()
+    }
+
+    private func hide() {
         panel.orderOut(nil)
-        item.button?.highlight(false)
+        if #unavailable(macOS 27) { item.button?.highlight(false) }
         timer?.invalidate()
         monitors.forEach(NSEvent.removeMonitor)
         monitors = []
@@ -332,5 +347,16 @@ final class Tray: NSObject {
     @objc private func settings() {
         close()
         onSettings()
+    }
+}
+
+@available(macOS 27, *)
+extension Tray: NSStatusItemExpandedInterfaceDelegate {
+    func statusItem(_ statusItem: NSStatusItem, didBegin session: NSStatusItemExpandedInterfaceSession) {
+        open()
+    }
+
+    func statusItemDidEndExpandedInterfaceSession(_ statusItem: NSStatusItem, animated: Bool) {
+        hide()
     }
 }
