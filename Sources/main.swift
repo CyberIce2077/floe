@@ -77,12 +77,7 @@ final class App: NSObject, NSApplicationDelegate {
     // Revoke every privacy grant for Floe, then quit; the next launch starts from a clean slate.
     private func removePermissions() {
         nativeSwitcher(true) // without Accessibility the tap goes deaf, so hand ⌘Tab back first
-        let reset = Process()
-        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
-        reset.arguments = ["reset", "All", Bundle.main.bundleIdentifier!]
-        try? reset.run()
-        reset.waitUntilExit()
-        Permission.allCases.forEach { prefs.removeObject(forKey: "asked." + $0.rawValue) }
+        Permission.reset("All")
         NSApp.terminate(nil)
     }
 

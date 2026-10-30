@@ -29,7 +29,6 @@ install: $(BIN)
 	new=$$(codesign -d -r- $(APP) 2>&1 | grep designated); \
 	if [ "$$old" != "$$new" ]; then \
 		tccutil reset Accessibility $(ID); tccutil reset ScreenCapture $(ID); \
-		defaults delete $(ID) asked.accessibility 2>/dev/null; defaults delete $(ID) asked.screenRecording 2>/dev/null; \
 	fi; true
 	rm -rf /Applications/Floe.app
 	cp -R $(APP) /Applications/

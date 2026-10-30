@@ -171,19 +171,23 @@ enum Permission: String, CaseIterable {
 
     var granted: Bool { self == .accessibility ? AXIsProcessTrusted() : CGPreflightScreenCaptureAccess() }
 
-    // The first ask registers Floe in System Settings and shows Apple's prompt; after that, go straight to the pane.
+    // Clears Floe's own entry before asking. An entry left by another build still looks switched on in
+    // System Settings but doesn't apply to this one, and macOS only prompts for apps it has no entry for.
     func request() {
-        let key = "asked." + rawValue
-        guard prefs.bool(forKey: key) else {
-            prefs.set(true, forKey: key)
-            if self == .accessibility {
-                AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
-            } else {
-                CGRequestScreenCaptureAccess()
-            }
-            return
+        Permission.reset(self == .accessibility ? "Accessibility" : "ScreenCapture")
+        if self == .accessibility {
+            AXIsProcessTrustedWithOptions([kAXTrustedCheckOptionPrompt.takeUnretainedValue(): true] as CFDictionary)
+        } else {
+            CGRequestScreenCaptureAccess()
         }
-        let pane = self == .accessibility ? "Privacy_Accessibility" : "Privacy_ScreenCapture"
-        NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?\(pane)")!)
+    }
+
+    static func reset(_ service: String) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        p.arguments = ["reset", service, Bundle.main.bundleIdentifier!]
+        p.standardOutput = FileHandle.nullDevice
+        try? p.run()
+        p.waitUntilExit()
     }
 }
