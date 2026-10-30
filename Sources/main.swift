@@ -23,6 +23,7 @@ final class App: NSObject, NSApplicationDelegate {
             self?.apply()
         }
         settings.onChange = { [weak self] in self?.apply() }
+        settings.onRemovePermissions = { [weak self] in self?.removePermissions() }
         _ = Switcher.shared // start tracking app activation order now
         apply()
         // First run (or a lost grant): explain what's needed instead of a bare system prompt.
@@ -71,6 +72,18 @@ final class App: NSObject, NSApplicationDelegate {
             // The event tap can lag the Accessibility grant by a moment, so retry until it runs.
             if Permission.allCases.map(\.granted) != granted || (AXIsProcessTrusted() && !eventTapRunning) { apply() }
         }
+    }
+
+    // Revoke every privacy grant for Floe, then quit; the next launch starts from a clean slate.
+    private func removePermissions() {
+        nativeSwitcher(true) // without Accessibility the tap goes deaf, so hand ⌘Tab back first
+        let reset = Process()
+        reset.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        reset.arguments = ["reset", "All", Bundle.main.bundleIdentifier!]
+        try? reset.run()
+        reset.waitUntilExit()
+        Permission.allCases.forEach { prefs.removeObject(forKey: "asked." + $0.rawValue) }
+        NSApp.terminate(nil)
     }
 
     // ⌘Tab / ⌘⇧Tab belong to the Dock unless we switch its hotkeys off.

@@ -4,6 +4,8 @@
 <dict>
 	<key>CFBundleIdentifier</key>
 	<string>io.github.cyberice2077.floe</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleName</key>
 	<string>Floe</string>
 	<key>CFBundleExecutable</key>

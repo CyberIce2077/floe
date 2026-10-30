@@ -13,6 +13,10 @@ final class Card: NSView {
         layer?.cornerRadius = radius
         content.translatesAutoresizingMaskIntoConstraints = false
         addSubview(content)
+        guard inset > 0 else {
+            NSLayoutConstraint.activate([content.centerXAnchor.constraint(equalTo: centerXAnchor), content.centerYAnchor.constraint(equalTo: centerYAnchor)])
+            return
+        }
         NSLayoutConstraint.activate([
             content.topAnchor.constraint(equalTo: topAnchor, constant: inset),
             content.bottomAnchor.constraint(equalTo: bottomAnchor, constant: -inset),
@@ -35,7 +39,7 @@ final class Card: NSView {
 final class FlatButton: NSButton {
     private var primary = false
 
-    convenience init(_ title: String, symbol: String? = nil, primary: Bool = false, target: AnyObject?, action: Selector) {
+    convenience init(_ title: String, symbol: String? = nil, primary: Bool = false, height: CGFloat = 32, target: AnyObject?, action: Selector) {
         self.init(frame: .zero)
         self.primary = primary
         self.title = title
@@ -43,8 +47,8 @@ final class FlatButton: NSButton {
         self.action = action
         isBordered = false
         wantsLayer = true
-        layer?.cornerRadius = 8
-        font = .systemFont(ofSize: 13, weight: .medium)
+        layer?.cornerRadius = height < 30 ? 6 : 8
+        font = .systemFont(ofSize: height < 30 ? 12 : 13, weight: .medium)
         if let symbol {
             self.title = " " + title // a little air between icon and label
             setAccessibilityTitle(title)
@@ -54,7 +58,7 @@ final class FlatButton: NSButton {
             imageHugsTitle = true
         }
         contentTintColor = primary ? .white : .labelColor
-        heightAnchor.constraint(equalToConstant: 32).isActive = true
+        heightAnchor.constraint(equalToConstant: height).isActive = true
     }
 
     override var wantsUpdateLayer: Bool { true }
@@ -100,17 +104,35 @@ func stretch(_ s: NSStackView) {
     for v in s.arrangedSubviews { v.widthAnchor.constraint(equalTo: s.widthAnchor).isActive = true }
 }
 
-func divider() -> NSView {
+// A hairline that starts after the row icon, like System Settings.
+func divider(inset: CGFloat = 34) -> NSView {
     let b = NSBox()
     b.boxType = .separator
-    return b
+    b.translatesAutoresizingMaskIntoConstraints = false
+    let v = NSView()
+    v.addSubview(b)
+    NSLayoutConstraint.activate([
+        b.leadingAnchor.constraint(equalTo: v.leadingAnchor, constant: inset),
+        b.trailingAnchor.constraint(equalTo: v.trailingAnchor),
+        b.topAnchor.constraint(equalTo: v.topAnchor),
+        b.bottomAnchor.constraint(equalTo: v.bottomAnchor),
+    ])
+    return v
+}
+
+// A white glyph on a colored rounded square.
+func iconTile(_ name: String, _ tint: NSColor) -> NSView {
+    let img = symbol(name, size: 12, color: .white)
+    img.translatesAutoresizingMaskIntoConstraints = false
+    let tile = Card(img, inset: 0, fill: tint, radius: 6, border: false)
+    NSLayoutConstraint.activate([tile.widthAnchor.constraint(equalToConstant: 24), tile.heightAnchor.constraint(equalToConstant: 24)])
+    return tile
 }
 
 // Icon, title and detail on the left, a control on the right.
 func featureRow(_ icon: String, _ title: String, _ detail: NSTextField, _ accessory: NSView, tint: NSColor = .controlAccentColor) -> NSView {
-    let img = symbol(icon, size: 15, color: tint)
-    img.widthAnchor.constraint(equalToConstant: 22).isActive = true
-    let text = stack([label(title, weight: .medium), detail], spacing: 2)
+    let img = iconTile(icon, tint)
+    let text = stack([label(title), detail], spacing: 1)
     text.setContentHuggingPriority(.defaultLow, for: .horizontal)
     text.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
     accessory.setContentHuggingPriority(.required, for: .horizontal)

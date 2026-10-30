@@ -16,6 +16,8 @@ final class Switcher {
     private(set) var sel = 0
     private(set) var wsel = 0
     private var wins: [pid_t: [Win]] = [:]
+    private var scWindows: [SCWindow] = []
+    private var captured: Set<CGWindowID> = []
     private var axCounts: [pid_t: Int] = [:]
     private var windowPicked = false
     private var active = false
@@ -81,6 +83,7 @@ final class Switcher {
         sel = (sel + d + apps.count) % apps.count
         wsel = 0
         windowPicked = false
+        captureSelected()
         refresh()
     }
 
@@ -127,6 +130,7 @@ final class Switcher {
         if apps.isEmpty { return close() }
         sel = min(sel, apps.count - 1)
         wsel = 0
+        captureSelected()
         refresh()
     }
 
@@ -147,6 +151,11 @@ final class Switcher {
     private func close() {
         active = false
         panel.orderOut(nil)
+        // Thumbnails are only worth their memory while the switcher is up; hand it back to the system.
+        wins = [:]
+        scWindows = []
+        captured = []
+        malloc_zone_pressure_relief(nil, 0)
     }
 
     private func activate(_ app: NSRunningApplication, allWindows: Bool = true) {
@@ -201,26 +210,34 @@ final class Switcher {
             await MainActor.run {
                 guard self.session == s else { return }
                 self.wins = listed
+                self.scWindows = ordered
+                self.captureSelected()
                 self.refresh()
             }
-            await withTaskGroup(of: Void.self) { group in
-                for w in ordered {
-                    group.addTask {
-                        let cfg = SCStreamConfiguration()
-                        let scale = min(2 * thumbSize.width / w.frame.width, 2 * thumbSize.height / w.frame.height, 2)
-                        cfg.width = Int(w.frame.width * scale)
-                        cfg.height = Int(w.frame.height * scale)
-                        cfg.showsCursor = false
-                        cfg.ignoreShadowsSingleWindow = true
-                        guard let img = try? await SCScreenshotManager.captureImage(
-                            contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg) else { return }
-                        let pid = w.owningApplication!.processID, id = w.windowID
-                        await MainActor.run {
-                            guard self.session == s, let i = self.wins[pid]?.firstIndex(where: { $0.id == id }) else { return }
-                            self.wins[pid]![i].image = img
-                            if pid == self.selected?.processIdentifier { self.refresh() }
-                        }
-                    }
+        }
+    }
+
+    // Thumbnails are captured only for the app you land on, so a ⌘Tab costs a few captures, not every window.
+    private func captureSelected() {
+        guard let pid = selected?.processIdentifier else { return }
+        let todo = scWindows.filter { $0.owningApplication?.processID == pid && !captured.contains($0.windowID) }
+        captured.formUnion(todo.map(\.windowID))
+        let s = session
+        for w in todo {
+            Task {
+                let cfg = SCStreamConfiguration()
+                let scale = min(2 * thumbSize.width / w.frame.width, 2 * thumbSize.height / w.frame.height, 2)
+                cfg.width = Int(w.frame.width * scale)
+                cfg.height = Int(w.frame.height * scale)
+                cfg.showsCursor = false
+                cfg.ignoreShadowsSingleWindow = true
+                guard let img = try? await SCScreenshotManager.captureImage(
+                    contentFilter: SCContentFilter(desktopIndependentWindow: w), configuration: cfg) else { return }
+                let id = w.windowID
+                await MainActor.run {
+                    guard self.session == s, let i = self.wins[pid]?.firstIndex(where: { $0.id == id }) else { return }
+                    self.wins[pid]![i].image = img
+                    if pid == self.selected?.processIdentifier { self.refresh() }
                 }
             }
         }

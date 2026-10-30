@@ -132,11 +132,11 @@ final class Tray: NSObject {
         awake.target = self
         awake.action = #selector(awakeChanged)
         awake.controlSize = .small
-        let awakeRow = featureRow("cup.and.heat.waves.fill", "Stay awake", note("Display and Mac won't sleep."), awake)
+        let awakeRow = featureRow("cup.and.heat.waves.fill", "Stay awake", note("Display and Mac won't sleep."), awake, tint: .systemBrown)
 
-        let review = FlatButton("Review", primary: true, target: self, action: #selector(settings))
-        review.widthAnchor.constraint(equalToConstant: 72).isActive = true
-        permissionCard = Card(featureRow("exclamationmark.shield.fill", "Permissions needed", permissionText, review, tint: .systemOrange), inset: 10)
+        let review = FlatButton("Review", primary: true, height: 24, target: self, action: #selector(settings))
+        review.widthAnchor.constraint(equalToConstant: 64).isActive = true
+        permissionCard = Card(featureRow("exclamationmark.triangle.fill", "Permissions needed", permissionText, review, tint: .systemOrange), inset: 10)
 
         let buttons = stack([
             FlatButton("Settings", symbol: "gearshape", target: self, action: #selector(settings)),

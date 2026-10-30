@@ -3,10 +3,12 @@ import ServiceManagement
 
 final class Settings: NSObject {
     var onChange: () -> Void = {}
+    var onRemovePermissions: () -> Void = {}
 
     private var window: NSWindow?
     private var switches: [String: NSSwitch] = [:]
     private var permissionViews: [Permission: (allowed: NSView, allow: NSView)] = [:]
+    private var removeButton: NSView?
 
     func show() {
         if window == nil { window = makeWindow() }
@@ -23,11 +25,13 @@ final class Settings: NSObject {
             v.allowed.isHidden = !p.granted
             v.allow.isHidden = p.granted
         }
+        removeButton?.isHidden = !Permission.allCases.contains(where: \.granted)
     }
 
     private func makeWindow() -> NSWindow {
         func toggle(_ key: String) -> NSSwitch {
             let sw = NSSwitch()
+            sw.controlSize = .small
             sw.target = self
             sw.action = #selector(toggled)
             sw.identifier = NSUserInterfaceItemIdentifier(key)
@@ -35,45 +39,72 @@ final class Settings: NSObject {
             return sw
         }
         func permission(_ p: Permission) -> NSView {
-            let allowed = stack([symbol("checkmark.circle.fill", size: 13, color: .systemGreen),
+            let allowed = stack([symbol("checkmark.circle.fill", size: 12, color: .systemGreen),
                                  label("Allowed", size: 12, color: .secondaryLabelColor)], vertical: false, spacing: 4)
-            let allow = FlatButton("Allow…", primary: true, target: self, action: #selector(requestPermission))
+            let allow = FlatButton("Allow", primary: true, height: 24, target: self, action: #selector(requestPermission))
             allow.identifier = NSUserInterfaceItemIdentifier(p.rawValue)
-            allow.widthAnchor.constraint(equalToConstant: 76).isActive = true
+            allow.widthAnchor.constraint(equalToConstant: 64).isActive = true
             permissionViews[p] = (allowed, allow)
-            return stack([allowed, allow], vertical: false)
+            let status = NSStackView()
+            status.setViews([allowed, allow], in: .trailing)
+            status.widthAnchor.constraint(equalToConstant: 84).isActive = true // same column whatever the state
+            return status
         }
-        func group(_ title: String, _ rows: [NSView]) -> [NSView] {
-            let body = stack(Array(rows.map { [$0, divider()] }.joined().dropLast()), spacing: 10)
+        func group(_ title: String, _ rows: [NSView], footer: NSView? = nil) -> [NSView] {
+            let body = stack(Array(rows.map { [$0, divider()] }.joined().dropLast()), spacing: 9)
             stretch(body)
-            return [sectionTitle(title), Card(body)]
+            return [sectionTitle(title), Card(body, inset: 10)] + (footer.map { [$0] } ?? [])
         }
+
         let login = NSSwitch()
+        login.controlSize = .small
         login.state = SMAppService.mainApp.status == .enabled ? .on : .off
         login.target = self
         login.action = #selector(toggleLogin)
 
+        let remove = NSButton(title: "Remove All Permissions…", target: self, action: #selector(removePermissions))
+        remove.isBordered = false
+        remove.font = .systemFont(ofSize: 12)
+        remove.contentTintColor = .systemRed
+        let spacer = NSView()
+        spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        let footer = stack([spacer, remove], vertical: false)
+        footer.edgeInsets = NSEdgeInsets(top: 0, left: 0, bottom: 4, right: 4)
+        removeButton = remove
+
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? ""
+        let icon = NSImageView(image: NSApp.applicationIconImage)
+        icon.widthAnchor.constraint(equalToConstant: 48).isActive = true
+        icon.heightAnchor.constraint(equalToConstant: 48).isActive = true
+        let header = stack([icon, stack([label("Floe", size: 17, weight: .semibold),
+                                         label("Version \(version)", size: 11, color: .secondaryLabelColor)], spacing: 1)],
+                           vertical: false, spacing: 12)
+
         let root = stack(
-            group("Permissions", [
-                featureRow("accessibility", "Accessibility", note("Needed for ⌘Tab, mouse scrolling, maximize and quit on close."), permission(.accessibility)),
-                featureRow("rectangle.dashed.badge.record", "Screen Recording", note("Optional. Shows live window previews in ⌘Tab."), permission(.screenRecording)),
-            ]) + group("Windows", [
-                featureRow("rectangle.stack", "Window switcher", note("⌘Tab with previews. ⌘` picks a window, W closes it, Q quits the app."), toggle("switcher")),
-                featureRow("xmark.square", "Quit on close", note("Quit apps when their last window closes."), toggle("quitOnClose")),
-                featureRow("arrow.up.left.and.arrow.down.right", "Maximize windows", note("The green button fills the screen. ⌥-click for full screen."), toggle("maximize")),
+            [header] + group("Permissions", [
+                featureRow("hand.raised.fill", "Accessibility", note("Required for ⌘Tab, scrolling and windows"), permission(.accessibility), tint: .systemBlue),
+                featureRow("rectangle.inset.filled.on.rectangle", "Screen Recording", note("Optional · live window previews in ⌘Tab"), permission(.screenRecording), tint: .systemPurple),
+            ], footer: footer) + group("Windows", [
+                featureRow("rectangle.stack.fill", "Window switcher", note("⌘Tab with previews and window counts"), toggle("switcher"), tint: .systemIndigo),
+                featureRow("xmark", "Quit on close", note("Quit apps when their last window closes"), toggle("quitOnClose"), tint: .systemRed),
+                featureRow("arrow.up.left.and.arrow.down.right", "Maximize windows", note("Green button fills the screen · ⌥ for full screen"), toggle("maximize"), tint: .systemGreen),
             ]) + group("Mouse", [
-                featureRow("computermouse", "Invert mouse scrolling", note("Wheel mice only; the trackpad keeps natural scrolling."), toggle("invertScroll")),
+                featureRow("computermouse.fill", "Invert mouse scrolling", note("Wheel mice only, trackpad stays natural"), toggle("invertScroll"), tint: .systemOrange),
             ]) + group("System", [
-                featureRow("cup.and.heat.waves", "Stay awake", note("Keep the display and Mac from sleeping."), toggle("stayAwake")),
-                featureRow("power", "Launch at login", note("Start Floe when you log in."), login),
+                featureRow("cup.and.heat.waves.fill", "Stay awake", note("Keep the display and Mac from sleeping"), toggle("stayAwake"), tint: .systemBrown),
+                featureRow("power", "Launch at login", note("Start Floe when you log in"), login, tint: .systemGray),
             ]),
             spacing: 8)
-        root.edgeInsets = NSEdgeInsets(top: 12, left: 16, bottom: 16, right: 16)
+        root.setCustomSpacing(14, after: header)
+        root.edgeInsets = NSEdgeInsets(top: 40, left: 16, bottom: 16, right: 16) // clears the traffic lights
         for v in root.arrangedSubviews { v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -32).isActive = true }
         root.widthAnchor.constraint(equalToConstant: 420).isActive = true
 
-        let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable], backing: .buffered, defer: true)
+        let w = NSWindow(contentRect: .zero, styleMask: [.titled, .closable, .fullSizeContentView], backing: .buffered, defer: true)
         w.title = "Floe Settings"
+        w.titleVisibility = .hidden
+        w.titlebarAppearsTransparent = true
+        w.isMovableByWindowBackground = true
         w.isReleasedWhenClosed = false
         w.backgroundColor = .windowBackgroundColor
         w.contentView = root
@@ -88,6 +119,17 @@ final class Settings: NSObject {
 
     @objc private func requestPermission(_ sender: NSButton) {
         Permission(rawValue: sender.identifier!.rawValue)?.request()
+    }
+
+    @objc private func removePermissions() {
+        let alert = NSAlert()
+        alert.messageText = "Remove all permissions?"
+        alert.informativeText = "Floe gives up Accessibility and Screen Recording access and quits. Open it again whenever you want to allow them."
+        alert.addButton(withTitle: "Remove and Quit").hasDestructiveAction = true
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window!) { [weak self] r in
+            if r == .alertFirstButtonReturn { self?.onRemovePermissions() }
+        }
     }
 
     @objc private func toggleLogin(_ sw: NSSwitch) {

@@ -9,10 +9,11 @@ SIGN ?= Floe Developer
 endif
 SIGN ?= -
 
-$(APP): Sources/*.swift Info.plist
-	mkdir -p $(APP)/Contents/MacOS
+$(APP): Sources/*.swift Info.plist Resources/AppIcon.icns
+	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
 	swiftc -O -swift-version 5 -target arm64-apple-macos14 Sources/*.swift -o $(APP)/Contents/MacOS/Floe
 	cp Info.plist $(APP)/Contents/
+	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	@[ "$(SIGN)" != "Floe Developer" ] || security unlock-keychain -p floe $(KC)
 	codesign --force --sign "$(SIGN)" $(if $(filter Floe,$(SIGN)),--keychain $(KC)) $(APP)
 
