@@ -122,6 +122,8 @@ final class Tray: NSObject {
     private let gpu = label("–", size: 22, weight: .bold)
     private let cpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let gpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let memory = label("–", size: 22, weight: .bold)
+    private let memoryUsed = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let disk = label("–", size: 22, weight: .bold)
     private let diskUsed = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let down = label("–", size: 22, weight: .bold)
@@ -259,7 +261,7 @@ final class Tray: NSObject {
     // Free space barely moves, so it's only read when the panel opens.
     private func readStats(disk readDisk: Bool) {
         reads.async {
-            let ct = Temps.cpu, gt = Temps.gpu, u = Usage.read(), d = readDisk ? Usage.disk : nil
+            let ct = Temps.cpu, gt = Temps.gpu, u = Usage.read(), m = Usage.memory, d = readDisk ? Usage.disk : nil
             DispatchQueue.main.async {
                 for (field, t) in [(self.cpu, ct), (self.gpu, gt)] {
                     field.stringValue = t.map { String(format: "%.0f °C", $0) } ?? "–"
@@ -267,6 +269,13 @@ final class Tray: NSObject {
                 for (load, v) in [(self.cpuLoad, u.cpu), (self.gpuLoad, u.gpu)] {
                     load.bar.doubleValue = v ?? 0
                     load.text.stringValue = v.map { String(format: "%.0f%%", $0) } ?? "–"
+                }
+                if let m {
+                    // RAM in binary gigabytes, as macOS sizes it: 16 GB, not 17.2.
+                    let gb = { (v: Double) in v / 1_073_741_824 }
+                    self.show(self.memory, (String(format: "%.1f", gb(m.used)), "GB"), String(format: " of %.0f GB", gb(m.total)))
+                    self.memoryUsed.bar.doubleValue = m.used / m.total * 100
+                    self.memoryUsed.text.stringValue = String(format: "%.0f%%", m.used / m.total * 100)
                 }
                 if let d {
                     self.show(self.disk, bytes(d.free), " free")
@@ -305,21 +314,29 @@ final class Tray: NSObject {
             if fill { footer.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
             return Card(body, inset: 10, fill: NSColor.labelColor.withAlphaComponent(0.05), radius: 8, border: false)
         }
-        func card(_ title: String, _ tiles: [NSView]) -> NSView {
-            let row = stack(tiles, vertical: false, spacing: 8)
-            row.distribution = .fillEqually
-            let s = stack([label(title, size: 12, weight: .semibold), row], spacing: 10)
+        // Each row splits its width equally between its tiles.
+        func card(_ title: String, _ rows: [[NSView]]) -> NSView {
+            let rows = rows.map { tiles -> NSView in
+                let row = stack(tiles, vertical: false, spacing: 8)
+                row.distribution = .fillEqually
+                return row
+            }
+            let s = stack([label(title, size: 12, weight: .semibold)] + rows, spacing: 8)
+            s.setCustomSpacing(10, after: s.arrangedSubviews[0])
             stretch(s)
             return Card(s)
         }
-        for v in [cpu, gpu, disk, down] { v.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold) }
+        for v in [cpu, gpu, memory, disk, down] { v.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold) }
         up.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
-        let temps = card("Temperature and usage", [tile("cpu", "CPU", cpu, meter(cpuLoad)), tile("memorychip", "GPU", gpu, meter(gpuLoad))])
-        let io = card("Storage and network", [
+        let temps = card("Temperature and usage", [
+            [tile("cpu", "CPU", cpu, meter(cpuLoad)), tile("square.3.layers.3d", "GPU", gpu, meter(gpuLoad))],
+            [tile("memorychip", "Memory", memory, meter(memoryUsed))],
+        ])
+        let io = card("Storage and network", [[
             tile("internaldrive", "SSD", disk, meter(diskUsed)),
             tile("network", "Network", stack([symbol("arrow.down", size: 12), down], vertical: false, spacing: 3),
                  stack([symbol("arrow.up", size: 9), up], vertical: false, spacing: 3), fill: false),
-        ])
+        ]])
 
         awake.target = self
         awake.action = #selector(awakeChanged)

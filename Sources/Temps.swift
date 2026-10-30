@@ -99,6 +99,18 @@ enum Usage {
         return (cpu, gpu(), rate(a.rx, b.rx), rate(a.tx, b.tx))
     }
 
+    // Memory used the way Activity Monitor counts it: app memory, wired and compressed. Microseconds to read.
+    static var memory: (used: Double, total: Double)? {
+        var s = vm_statistics64()
+        var n = mach_msg_type_number_t(MemoryLayout<vm_statistics64>.size / MemoryLayout<integer_t>.size)
+        let ok = withUnsafeMutablePointer(to: &s) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(n)) { host_statistics64(mach_host_self(), HOST_VM_INFO64, $0, &n) }
+        }
+        guard ok == KERN_SUCCESS else { return nil }
+        let pages = UInt64(s.internal_page_count) - UInt64(s.purgeable_count) + UInt64(s.wire_count) + UInt64(s.compressor_page_count)
+        return (Double(pages * UInt64(vm_kernel_page_size)), Double(ProcessInfo.processInfo.physicalMemory))
+    }
+
     // Free space as Finder counts it (purgeable space is free). ~4 ms, so it's read when the panel opens.
     static var disk: (free: Double, total: Double)? {
         let v = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
