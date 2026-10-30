@@ -1,3 +1,4 @@
+import Foundation
 import IOKit
 
 // CPU/GPU temperatures from the SMC. Apple Silicon names its sensors Tp*/Te* (CPU cores) and Tg* (GPU).
@@ -76,4 +77,51 @@ enum Temps {
     }
 
     private static func fourcc(_ s: String) -> UInt32 { s.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
+}
+
+// CPU and GPU load in percent. Each read costs tens of microseconds, next to the SMC's ~13 ms.
+enum Usage {
+    private static var last: (busy: UInt64, total: UInt64, at: UInt64)?
+
+    // Busy share of all cores since the previous read. A missing or stale sample is retaken over 0.3 s.
+    static var cpu: Double? {
+        if last == nil || DispatchTime.now().uptimeNanoseconds - last!.at > 5_000_000_000 {
+            last = ticks()
+            usleep(300_000)
+        }
+        let prev = last!, now = ticks()
+        last = now
+        guard now.total > prev.total, now.busy >= prev.busy else { return nil } // counters wrapped
+        return Double(now.busy - prev.busy) / Double(now.total - prev.total) * 100
+    }
+
+    // The GPU driver's own figure, the one Activity Monitor shows.
+    static var gpu: Double? {
+        var it: io_iterator_t = 0
+        guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &it) == KERN_SUCCESS else { return nil }
+        defer { IOObjectRelease(it) }
+        var result: Double?
+        while case let entry = IOIteratorNext(it), entry != 0 {
+            let stats = IORegistryEntryCreateCFProperty(entry, "PerformanceStatistics" as CFString, kCFAllocatorDefault, 0)?
+                .takeRetainedValue() as? [String: Any]
+            if let v = stats?["Device Utilization %"] as? Int { result = max(result ?? 0, Double(v)) }
+            IOObjectRelease(entry)
+        }
+        return result
+    }
+
+    private static func ticks() -> (busy: UInt64, total: UInt64, at: UInt64) {
+        var info: processor_info_array_t?
+        var count: mach_msg_type_number_t = 0, cpus: natural_t = 0
+        guard host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &cpus, &info, &count) == KERN_SUCCESS,
+              let info else { return (0, 0, DispatchTime.now().uptimeNanoseconds) }
+        defer { vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(count) * vm_size_t(MemoryLayout<integer_t>.stride)) }
+        var busy: UInt64 = 0, idle: UInt64 = 0
+        for c in 0..<Int(cpus) {
+            let t = { (s: Int32) in UInt64(UInt32(bitPattern: info[c * Int(CPU_STATE_MAX) + Int(s)])) }
+            busy += t(CPU_STATE_USER) + t(CPU_STATE_SYSTEM) + t(CPU_STATE_NICE)
+            idle += t(CPU_STATE_IDLE)
+        }
+        return (busy, busy + idle, DispatchTime.now().uptimeNanoseconds)
+    }
 }

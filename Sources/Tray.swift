@@ -53,6 +53,9 @@ final class Tray: NSObject {
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
     private let cpu = label("–", size: 22, weight: .bold)
     private let gpu = label("–", size: 22, weight: .bold)
+    private let cpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let gpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let reads = DispatchQueue(label: "floe.stats", qos: .userInitiated)
     private let awake = NSSwitch()
     private let permissionText = note("")
     private var permissionCard: NSView!
@@ -112,8 +115,8 @@ final class Tray: NSObject {
         panel.orderFrontRegardless()
         panel.makeKey()
         item.button?.highlight(true)
-        readTemps()
-        timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readTemps() }
+        readStats()
+        timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readStats() }
         RunLoop.main.add(timer!, forMode: .common)
         monitors = [
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -154,28 +157,41 @@ final class Tray: NSObject {
         panel.invalidateShadow()
     }
 
-    // Off the main thread so the panel never waits on the SMC.
-    private func readTemps() {
-        DispatchQueue.global(qos: .userInitiated).async {
+    // Off the main thread so the panel never waits on the SMC; one serial queue so reads never overlap.
+    private func readStats() {
+        reads.async {
             let fmt = { (v: Double?) in v.map { String(format: "%.0f °C", $0) } ?? "–" }
-            let c = fmt(Temps.cpu), g = fmt(Temps.gpu)
+            let c = fmt(Temps.cpu), g = fmt(Temps.gpu), cl = Usage.cpu, gl = Usage.gpu
             DispatchQueue.main.async {
                 self.cpu.stringValue = c
                 self.gpu.stringValue = g
+                for (load, v) in [(self.cpuLoad, cl), (self.gpuLoad, gl)] {
+                    load.bar.doubleValue = v ?? 0
+                    load.text.stringValue = v.map { String(format: "%.0f%%", $0) } ?? "–"
+                }
             }
         }
     }
 
     private func makeContent() -> NSView {
-        func tile(_ icon: String, _ name: String, _ value: NSTextField) -> NSView {
+        func tile(_ icon: String, _ name: String, _ value: NSTextField, _ load: (bar: NSProgressIndicator, text: NSTextField)) -> NSView {
             let head = stack([symbol(icon, size: 11), label(name, size: 12, color: .secondaryLabelColor)], vertical: false, spacing: 4)
             value.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold)
-            return Card(stack([head, value], spacing: 4, align: .centerX), inset: 10,
-                        fill: NSColor.labelColor.withAlphaComponent(0.05), radius: 8, border: false)
+            load.bar.isIndeterminate = false
+            load.bar.controlSize = .small
+            load.bar.maxValue = 100
+            load.text.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+            load.text.alignment = .right
+            load.text.widthAnchor.constraint(equalToConstant: 32).isActive = true
+            let usage = stack([load.bar, load.text], vertical: false, spacing: 6)
+            let body = stack([head, value, usage], spacing: 4, align: .centerX)
+            body.setCustomSpacing(8, after: value)
+            usage.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+            return Card(body, inset: 10, fill: NSColor.labelColor.withAlphaComponent(0.05), radius: 8, border: false)
         }
-        let tiles = stack([tile("cpu", "CPU", cpu), tile("memorychip", "GPU", gpu)], vertical: false, spacing: 8)
+        let tiles = stack([tile("cpu", "CPU", cpu, cpuLoad), tile("memorychip", "GPU", gpu, gpuLoad)], vertical: false, spacing: 8)
         tiles.distribution = .fillEqually
-        let temps = stack([label("Temperatures", size: 12, weight: .semibold), tiles], spacing: 10)
+        let temps = stack([label("Temperature and usage", size: 12, weight: .semibold), tiles], spacing: 10)
         stretch(temps)
 
         awake.target = self
