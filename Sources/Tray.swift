@@ -77,15 +77,24 @@ final class Tray: NSObject {
         timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readTemps() }
         RunLoop.main.add(timer!, forMode: .common)
         monitors = [
-            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in self?.close() }!,
+            NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+                guard let self, !onIcon else { return }
+                close()
+            }!,
             NSEvent.addLocalMonitorForEvents(matching: [.keyDown, .leftMouseDown]) { [weak self] e in
                 guard let self else { return e }
                 if e.type == .keyDown && e.keyCode == 53 { close(); return nil }
-                // Clicks in our other windows (Settings) close the panel too; the status button handles itself.
-                if e.type == .leftMouseDown && e.window !== panel && e.window !== item.button?.window { close() }
+                // Clicks in our other windows (Settings) close the panel too.
+                if e.type == .leftMouseDown && e.window !== panel && !onIcon { close() }
                 return e
             }!,
         ]
+    }
+
+    // A click on the icon is left to toggle(); if a monitor closed the panel first, toggle would reopen it.
+    // Checked by position, since the event's window isn't reliably the status button's.
+    private var onIcon: Bool {
+        item.button?.window?.frame.contains(NSEvent.mouseLocation) ?? false
     }
 
     private func close() {
