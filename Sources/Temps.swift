@@ -79,24 +79,35 @@ enum Temps {
     private static func fourcc(_ s: String) -> UInt32 { s.utf8.reduce(0) { $0 << 8 | UInt32($1) } }
 }
 
-// CPU and GPU load in percent. Each read costs tens of microseconds, next to the SMC's ~13 ms.
+// Load and throughput: CPU and GPU in percent, network in bytes per second. Each read costs tens of
+// microseconds, next to the SMC's ~13 ms.
 enum Usage {
-    private static var last: (busy: UInt64, total: UInt64, at: UInt64)?
+    private struct Counters { var busy, total, rx, tx, at: UInt64 }
+    private static var last: Counters?
 
-    // Busy share of all cores since the previous read. A missing or stale sample is retaken over 0.3 s.
-    static var cpu: Double? {
+    // Rates since the previous read. A missing or stale baseline is retaken over 0.3 s.
+    static func read() -> (cpu: Double?, gpu: Double?, down: Double?, up: Double?) {
         if last == nil || DispatchTime.now().uptimeNanoseconds - last!.at > 5_000_000_000 {
-            last = ticks()
+            last = counters()
             usleep(300_000)
         }
-        let prev = last!, now = ticks()
-        last = now
-        guard now.total > prev.total, now.busy >= prev.busy else { return nil } // counters wrapped
-        return Double(now.busy - prev.busy) / Double(now.total - prev.total) * 100
+        let a = last!, b = counters()
+        last = b
+        let secs = Double(b.at - a.at) / 1e9
+        let rate = { (x: UInt64, y: UInt64) in y >= x ? Double(y - x) / secs : nil } // nil if a counter reset
+        let cpu = b.total > a.total && b.busy >= a.busy ? Double(b.busy - a.busy) / Double(b.total - a.total) * 100 : nil
+        return (cpu, gpu(), rate(a.rx, b.rx), rate(a.tx, b.tx))
+    }
+
+    // Free space as Finder counts it (purgeable space is free). ~4 ms, so it's read when the panel opens.
+    static var disk: (free: Double, total: Double)? {
+        let v = try? URL(fileURLWithPath: "/").resourceValues(forKeys: [.volumeAvailableCapacityForImportantUsageKey, .volumeTotalCapacityKey])
+        guard let free = v?.volumeAvailableCapacityForImportantUsage, let total = v?.volumeTotalCapacity, total > 0 else { return nil }
+        return (Double(free), Double(total))
     }
 
     // The GPU driver's own figure, the one Activity Monitor shows.
-    static var gpu: Double? {
+    private static func gpu() -> Double? {
         var it: io_iterator_t = 0
         guard IOServiceGetMatchingServices(kIOMainPortDefault, IOServiceMatching("IOAccelerator"), &it) == KERN_SUCCESS else { return nil }
         defer { IOObjectRelease(it) }
@@ -110,18 +121,39 @@ enum Usage {
         return result
     }
 
-    private static func ticks() -> (busy: UInt64, total: UInt64, at: UInt64) {
+    private static func counters() -> Counters {
+        var c = Counters(busy: 0, total: 0, rx: 0, tx: 0, at: DispatchTime.now().uptimeNanoseconds)
         var info: processor_info_array_t?
         var count: mach_msg_type_number_t = 0, cpus: natural_t = 0
-        guard host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &cpus, &info, &count) == KERN_SUCCESS,
-              let info else { return (0, 0, DispatchTime.now().uptimeNanoseconds) }
-        defer { vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(count) * vm_size_t(MemoryLayout<integer_t>.stride)) }
-        var busy: UInt64 = 0, idle: UInt64 = 0
-        for c in 0..<Int(cpus) {
-            let t = { (s: Int32) in UInt64(UInt32(bitPattern: info[c * Int(CPU_STATE_MAX) + Int(s)])) }
-            busy += t(CPU_STATE_USER) + t(CPU_STATE_SYSTEM) + t(CPU_STATE_NICE)
-            idle += t(CPU_STATE_IDLE)
+        if host_processor_info(mach_host_self(), PROCESSOR_CPU_LOAD_INFO, &cpus, &info, &count) == KERN_SUCCESS, let info {
+            for i in 0..<Int(cpus) {
+                let t = { (s: Int32) in UInt64(UInt32(bitPattern: info[i * Int(CPU_STATE_MAX) + Int(s)])) }
+                let busy = t(CPU_STATE_USER) + t(CPU_STATE_SYSTEM) + t(CPU_STATE_NICE)
+                c.busy += busy
+                c.total += busy + t(CPU_STATE_IDLE)
+            }
+            vm_deallocate(mach_task_self_, vm_address_t(bitPattern: info), vm_size_t(count) * vm_size_t(MemoryLayout<integer_t>.stride))
         }
-        return (busy, busy + idle, DispatchTime.now().uptimeNanoseconds)
+        // Network: 64-bit byte counters of the physical interfaces (en*). getifaddrs' are 32-bit and wrap every 4 GB.
+        var mib: [Int32] = [CTL_NET, PF_ROUTE, 0, 0, NET_RT_IFLIST2, 0], len = 0
+        guard sysctl(&mib, 6, nil, &len, nil, 0) == 0 else { return c }
+        var buf = [UInt8](repeating: 0, count: len)
+        guard sysctl(&mib, 6, &buf, &len, nil, 0) == 0 else { return c }
+        buf.withUnsafeBytes { p in
+            var o = 0, name = [CChar](repeating: 0, count: Int(IF_NAMESIZE))
+            while o + MemoryLayout<if_msghdr>.size <= len {
+                let h = p.loadUnaligned(fromByteOffset: o, as: if_msghdr.self)
+                if Int32(h.ifm_type) == RTM_IFINFO2 {
+                    let m = p.loadUnaligned(fromByteOffset: o, as: if_msghdr2.self)
+                    if if_indextoname(UInt32(m.ifm_index), &name) != nil, String(cString: name).hasPrefix("en") {
+                        c.rx += m.ifm_data.ifi_ibytes
+                        c.tx += m.ifm_data.ifi_obytes
+                    }
+                }
+                guard h.ifm_msglen > 0 else { break }
+                o += Int(h.ifm_msglen)
+            }
+        }
+        return c
     }
 }

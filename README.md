@@ -6,7 +6,7 @@
 
 <p align="center">
   <b>A tiny macOS menu bar app that does six things, and does them fast.</b><br>
-  ⌘Tab with previews · quit on close · green-button maximize · mouse scroll fix · stay awake · CPU/GPU temps and usage
+  ⌘Tab with previews · quit on close · green-button maximize · mouse scroll fix · stay awake · system stats
 </p>
 
 <p align="center">
@@ -30,10 +30,10 @@ All-in-one Mac utilities keep growing until the few features you rely on get slo
 - **Maximize windows.** The green button fills the screen instead of opening a new full-screen Space. Click again to restore, or ⌥-click for real full screen.
 - **Invert mouse scrolling.** Flips wheel mice (hello, Logitech) while the trackpad keeps natural scrolling.
 - **Stay awake.** Keeps the display and the Mac awake, one switch in the menu bar.
-- **CPU and GPU temperature and usage** in the menu bar panel. Temperatures come straight from the SMC, usage from the kernel and the GPU driver.
+- **System stats** in the menu bar panel: CPU and GPU temperature and usage, free SSD space and network speed. Temperatures come straight from the SMC, the rest from the kernel and the GPU driver.
 
 <p align="center">
-  <img src="docs/menu.png" width="320" alt="Menu bar panel with CPU and GPU temperature and usage, Stay awake, Settings and Quit">
+  <img src="docs/menu.png" width="320" alt="Menu bar panel with CPU and GPU temperature and usage, SSD space, network speed, Stay awake, Settings and Quit">
   &nbsp;&nbsp;
   <img src="docs/settings.png" width="400" alt="Settings window with permissions and feature switches">
 </p>
@@ -51,8 +51,8 @@ All-in-one Mac utilities keep growing until the few features you rely on get slo
 
 What keeps it light and quick:
 
-- **No dependencies, nothing bundled:** about 1,500 lines of Swift compiled into one binary with `swiftc`.
-- **No background work.** Temperatures and usage are only read while the panel is open, and window previews are only captured for the app you land on in ⌘Tab, then released. The only timer runs while Floe waits for you to grant a permission.
+- **No dependencies, nothing bundled:** about 1,600 lines of Swift compiled into one binary with `swiftc`.
+- **No background work.** System stats are only read while the panel is open, and window previews are only captured for the app you land on in ⌘Tab, then released. The only timer runs while Floe waits for you to grant a permission.
 - **Input never waits on the UI.** Keyboard and scroll handling run on their own thread, so a busy app or a slow window capture can't make ⌘Tab or scrolling stutter. If macOS ever pauses the event tap, Floe turns it back on immediately.
 - **A hung app can't freeze Floe.** Every Accessibility call has a 250 ms timeout.
 - **The menu bar panel is reliable:** it opens on mouse-down and closes only on an outside click, Esc or the icon, never on its own.

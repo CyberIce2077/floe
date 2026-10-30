@@ -40,6 +40,13 @@ func menuBarIcon(awake: Bool) -> NSImage {
     return img
 }
 
+// Decimal units, like Finder: one decimal below 10.
+private func bytes(_ v: Double) -> (String, String) {
+    var v = v, u = 0
+    while v >= 999.5 && u < 4 { v /= 1000; u += 1 }
+    return (String(format: v < 9.95 && u > 0 ? "%.1f" : "%.0f", v), ["B", "KB", "MB", "GB", "TB"][u])
+}
+
 private final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
@@ -55,6 +62,10 @@ final class Tray: NSObject {
     private let gpu = label("–", size: 22, weight: .bold)
     private let cpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let gpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let disk = label("–", size: 22, weight: .bold)
+    private let diskUsed = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let down = label("–", size: 22, weight: .bold)
+    private let up = label("–", size: 11, color: .secondaryLabelColor)
     private let reads = DispatchQueue(label: "floe.stats", qos: .userInitiated)
     private let awake = NSSwitch()
     private let permissionText = note("")
@@ -115,8 +126,8 @@ final class Tray: NSObject {
         panel.orderFrontRegardless()
         panel.makeKey()
         item.button?.highlight(true)
-        readStats()
-        timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readStats() }
+        readStats(disk: true)
+        timer = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.readStats(disk: false) }
         RunLoop.main.add(timer!, forMode: .common)
         monitors = [
             NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
@@ -158,41 +169,70 @@ final class Tray: NSObject {
     }
 
     // Off the main thread so the panel never waits on the SMC; one serial queue so reads never overlap.
-    private func readStats() {
+    // Free space barely moves, so it's only read when the panel opens.
+    private func readStats(disk readDisk: Bool) {
         reads.async {
-            let fmt = { (v: Double?) in v.map { String(format: "%.0f °C", $0) } ?? "–" }
-            let c = fmt(Temps.cpu), g = fmt(Temps.gpu), cl = Usage.cpu, gl = Usage.gpu
+            let ct = Temps.cpu, gt = Temps.gpu, u = Usage.read(), d = readDisk ? Usage.disk : nil
             DispatchQueue.main.async {
-                self.cpu.stringValue = c
-                self.gpu.stringValue = g
-                for (load, v) in [(self.cpuLoad, cl), (self.gpuLoad, gl)] {
+                for (field, t) in [(self.cpu, ct), (self.gpu, gt)] {
+                    field.stringValue = t.map { String(format: "%.0f °C", $0) } ?? "–"
+                }
+                for (load, v) in [(self.cpuLoad, u.cpu), (self.gpuLoad, u.gpu)] {
                     load.bar.doubleValue = v ?? 0
                     load.text.stringValue = v.map { String(format: "%.0f%%", $0) } ?? "–"
                 }
+                if let d {
+                    self.show(self.disk, bytes(d.free), " free")
+                    self.diskUsed.bar.doubleValue = (1 - d.free / d.total) * 100
+                    self.diskUsed.text.stringValue = String(format: "%.0f%%", (1 - d.free / d.total) * 100)
+                }
+                self.show(self.down, u.down.map(bytes), "/s")
+                self.up.stringValue = u.up.map { let (n, unit) = bytes($0); return "\(n) \(unit)/s" } ?? "–"
             }
         }
     }
 
+    // A big number with its unit in small type, so speeds and sizes fit the tile.
+    private func show(_ field: NSTextField, _ v: (String, String)?, _ suffix: String) {
+        guard let (n, unit) = v else { return field.stringValue = "–" }
+        let s = NSMutableAttributedString(string: n, attributes: [.font: field.font!, .foregroundColor: NSColor.labelColor])
+        s.append(NSAttributedString(string: " " + unit + suffix, attributes: [
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold), .foregroundColor: NSColor.secondaryLabelColor]))
+        field.attributedStringValue = s
+    }
+
     private func makeContent() -> NSView {
-        func tile(_ icon: String, _ name: String, _ value: NSTextField, _ load: (bar: NSProgressIndicator, text: NSTextField)) -> NSView {
-            let head = stack([symbol(icon, size: 11), label(name, size: 12, color: .secondaryLabelColor)], vertical: false, spacing: 4)
-            value.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold)
+        func meter(_ load: (bar: NSProgressIndicator, text: NSTextField)) -> NSView {
             load.bar.isIndeterminate = false
             load.bar.controlSize = .small
             load.bar.maxValue = 100
             load.text.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
             load.text.alignment = .right
             load.text.widthAnchor.constraint(equalToConstant: 32).isActive = true
-            let usage = stack([load.bar, load.text], vertical: false, spacing: 6)
-            let body = stack([head, value, usage], spacing: 4, align: .centerX)
+            return stack([load.bar, load.text], vertical: false, spacing: 6)
+        }
+        func tile(_ icon: String, _ name: String, _ value: NSView, _ footer: NSView, fill: Bool = true) -> NSView {
+            let head = stack([symbol(icon, size: 11), label(name, size: 12, color: .secondaryLabelColor)], vertical: false, spacing: 4)
+            let body = stack([head, value, footer], spacing: 4, align: .centerX)
             body.setCustomSpacing(8, after: value)
-            usage.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
+            if fill { footer.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
             return Card(body, inset: 10, fill: NSColor.labelColor.withAlphaComponent(0.05), radius: 8, border: false)
         }
-        let tiles = stack([tile("cpu", "CPU", cpu, cpuLoad), tile("memorychip", "GPU", gpu, gpuLoad)], vertical: false, spacing: 8)
-        tiles.distribution = .fillEqually
-        let temps = stack([label("Temperature and usage", size: 12, weight: .semibold), tiles], spacing: 10)
-        stretch(temps)
+        func card(_ title: String, _ tiles: [NSView]) -> NSView {
+            let row = stack(tiles, vertical: false, spacing: 8)
+            row.distribution = .fillEqually
+            let s = stack([label(title, size: 12, weight: .semibold), row], spacing: 10)
+            stretch(s)
+            return Card(s)
+        }
+        for v in [cpu, gpu, disk, down] { v.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold) }
+        up.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+        let temps = card("Temperature and usage", [tile("cpu", "CPU", cpu, meter(cpuLoad)), tile("memorychip", "GPU", gpu, meter(gpuLoad))])
+        let io = card("Storage and network", [
+            tile("internaldrive", "SSD", disk, meter(diskUsed)),
+            tile("network", "Network", stack([symbol("arrow.down", size: 12), down], vertical: false, spacing: 3),
+                 stack([symbol("arrow.up", size: 9), up], vertical: false, spacing: 3), fill: false),
+        ])
 
         awake.target = self
         awake.action = #selector(awakeChanged)
@@ -209,7 +249,7 @@ final class Tray: NSObject {
         ], vertical: false, spacing: 8)
         buttons.distribution = .fillEqually
 
-        let root = stack([sectionTitle("System"), Card(temps), Card(awakeRow, inset: 10), permissionCard, buttons], spacing: 8)
+        let root = stack([sectionTitle("System"), temps, io, Card(awakeRow, inset: 10), permissionCard, buttons], spacing: 8)
         root.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
         for v in root.arrangedSubviews { v.widthAnchor.constraint(equalTo: root.widthAnchor, constant: -20).isActive = true }
         return root
