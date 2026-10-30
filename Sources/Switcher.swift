@@ -183,6 +183,8 @@ final class Switcher {
             DispatchQueue.main.async { [self] in
                 guard session == s else { return }
                 axCounts = Dictionary(uniqueKeysWithValues: zip(pids, result))
+                // With Screen Recording, wait for the full window list: AX can't see other Spaces.
+                if !CGPreflightScreenCaptureAccess() { dropWindowless { self.axCounts[$0, default: 0] > 0 } }
                 refresh()
             }
         }
@@ -210,6 +212,7 @@ final class Switcher {
             await MainActor.run {
                 guard self.session == s else { return }
                 self.wins = listed
+                self.dropWindowless { listed[$0] != nil }
                 self.scWindows = ordered
                 self.captureSelected()
                 self.refresh()
@@ -246,6 +249,23 @@ final class Switcher {
     private func show() {
         refresh()
         panel.orderFrontRegardless()
+    }
+
+    // An app with no windows anywhere (Finder after you close its last one) isn't worth a stop in ⌘Tab.
+    // Hidden apps keep their windows, so ⌘Tab still brings them back.
+    private func dropWindowless(_ hasWindows: (pid_t) -> Bool) {
+        let current = selected
+        apps.removeAll { !hasWindows($0.processIdentifier) }
+        guard !apps.isEmpty else { return close() }
+        // Keep the selection on the same app, not the same slot.
+        if let current, let i = apps.firstIndex(of: current) {
+            sel = i
+        } else {
+            sel = min(sel, apps.count - 1)
+            wsel = 0
+            windowPicked = false
+            captureSelected()
+        }
     }
 
     private func refresh() {

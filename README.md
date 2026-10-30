@@ -25,7 +25,7 @@
 
 All-in-one Mac utilities keep growing until the few features you rely on get slow or flaky: ⌘Tab that sometimes doesn't fire, a menu bar popup that closes as soon as it opens. Floe keeps only six of those features and makes each one dependable:
 
-- **Window switcher.** ⌘Tab shows your apps as large icons, with a floating card of live previews for the selected app's windows on every Space. ⌘\` moves between windows, W closes one, Q quits the app, Esc cancels. Tabs (Terminal, Finder) count as one window.
+- **Window switcher.** ⌘Tab shows your apps as large icons, with a floating card of live previews for the selected app's windows on every Space. ⌘\` moves between windows, W closes one, Q quits the app, Esc cancels. Tabs (Terminal, Finder) count as one window. Apps with no open windows, like Finder after you close it, stay out of the way.
 - **Quit on close.** Closing an app's last window quits it, the way it works on Windows. Finder and menu bar apps are left alone.
 - **Maximize windows.** The green button fills the screen instead of opening a new full-screen Space. Click again to restore, or ⌥-click for real full screen.
 - **Invert mouse scrolling.** Flips wheel mice (hello, Logitech) while the trackpad keeps natural scrolling.
