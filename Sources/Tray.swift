@@ -1,43 +1,101 @@
 import AppKit
 
-// The app icon's floe as a menu bar template: the berg above water solid, the hidden part below outlined.
-// Stay awake adds the icon's glint.
-func menuBarIcon(awake: Bool) -> NSImage {
+// The app icon's floe as a menu bar template: the berg above water solid, the hidden part below faint.
+let menuBarIcon: NSImage = {
     func shape(_ pts: [(CGFloat, CGFloat)]) -> NSBezierPath {
         let path = NSBezierPath()
         path.move(to: NSPoint(x: pts[0].0, y: pts[0].1))
         for q in pts.dropFirst() { path.line(to: NSPoint(x: q.0, y: q.1)) }
+        path.close()
         return path
     }
     let img = NSImage(size: NSSize(width: 22, height: 18), flipped: false) { _ in
         NSColor.black.set()
-        let top = shape([(4.6, 9.6), (6.6, 13.2), (9.2, 16.8), (12.2, 17.6), (14.8, 14), (16, 9.6)])
-        top.close()
-        top.fill()
+        shape([(4.6, 9.6), (6.6, 13.2), (9.2, 16.8), (12.2, 17.6), (14.8, 14), (16, 9.6)]).fill()
         // A thin gap is the water surface; the faint body below is the part you don't see.
-        let below = shape([(3, 8.4), (17.6, 8.4), (19, 5.2), (16.4, 1.6), (10.6, 0.4), (4.6, 1.2), (1.8, 4.8)])
-        below.close()
         NSColor.black.withAlphaComponent(0.4).setFill()
-        below.fill()
+        shape([(3, 8.4), (17.6, 8.4), (19, 5.2), (16.4, 1.6), (10.6, 0.4), (4.6, 1.2), (1.8, 4.8)]).fill()
         NSColor.black.setFill()
         NSRect(x: 0, y: 8.6, width: 2.4, height: 0.8).fill()
         NSRect(x: 18.2, y: 8.6, width: 2.4, height: 0.8).fill()
-        if awake {
-            let c = NSPoint(x: 19.3, y: 15), r: CGFloat = 2.6
-            let star = NSBezierPath()
-            for i in 0..<8 {
-                let a = CGFloat(i) * .pi / 4, d = i % 2 == 0 ? r : r * 0.3
-                let pt = NSPoint(x: c.x + d * sin(a), y: c.y + d * cos(a))
-                i == 0 ? star.move(to: pt) : star.line(to: pt)
-            }
-            star.close()
-            star.fill()
-        }
         return true
     }
     img.isTemplate = true
     img.accessibilityDescription = "Floe"
     return img
+}()
+
+// Stay awake's glint, the icon's four-point star in icy blue. It sits on top of the template icon, which keeps
+// macOS's own tinting, and twinkles in once when switched on; Core Animation runs that, so nothing ticks afterwards.
+private final class Glint: NSView {
+    private let star = CAShapeLayer()
+    private(set) var isOn = false
+
+    init() {
+        super.init(frame: NSRect(x: 0, y: 0, width: 8, height: 8))
+        wantsLayer = true
+        let path = CGMutablePath(), r: CGFloat = 3.4
+        for i in 0..<8 {
+            let a = CGFloat(i) * .pi / 4, d = i % 2 == 0 ? r : r * 0.28
+            let pt = CGPoint(x: 4 + d * sin(a), y: 4 + d * cos(a))
+            i == 0 ? path.move(to: pt) : path.addLine(to: pt)
+        }
+        path.closeSubpath()
+        star.path = path
+        star.bounds = bounds
+        star.position = CGPoint(x: 4, y: 4)
+        star.opacity = 0
+        layer?.addSublayer(star)
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    // Deeper blue on a light menu bar, lighter on a dark one, so it reads on either.
+    override func viewDidChangeEffectiveAppearance() {
+        let dark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        star.fillColor = (dark ? NSColor(red: 0.49, green: 0.78, blue: 0.96, alpha: 1)
+                               : NSColor(red: 0.18, green: 0.56, blue: 0.85, alpha: 1)).cgColor
+        CATransaction.commit()
+    }
+
+    func set(_ on: Bool, animated: Bool) {
+        guard on != isOn else { return }
+        isOn = on
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        star.opacity = on ? 1 : 0
+        CATransaction.commit()
+        guard animated, !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
+        let anim = CAAnimationGroup()
+        if on {
+            let scale = CAKeyframeAnimation(keyPath: "transform.scale")
+            scale.values = [0, 1.5, 0.9, 1]
+            scale.keyTimes = [0, 0.45, 0.75, 1]
+            let spin = CABasicAnimation(keyPath: "transform.rotation.z")
+            spin.fromValue = -CGFloat.pi / 2
+            spin.toValue = 0
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = 0.2
+            anim.animations = [scale, spin, fade]
+            anim.duration = 0.55
+            anim.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        } else {
+            let scale = CABasicAnimation(keyPath: "transform.scale")
+            scale.fromValue = 1
+            scale.toValue = 0.3
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 1
+            fade.toValue = 0
+            anim.animations = [scale, fade]
+            anim.duration = 0.25
+            anim.timingFunction = CAMediaTimingFunction(name: .easeIn)
+        }
+        star.add(anim, forKey: "twinkle")
+    }
 }
 
 // Decimal units, like Finder: one decimal below 10.
@@ -58,6 +116,8 @@ final class Tray: NSObject {
     var onAwake: (Bool) -> Void = { _ in }
 
     private let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+    private let glint = Glint()
+    private var shown = false
     private let cpu = label("–", size: 22, weight: .bold)
     private let gpu = label("–", size: 22, weight: .bold)
     private let cpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
@@ -104,10 +164,22 @@ final class Tray: NSObject {
         item.button?.target = self
         item.button?.action = #selector(toggle)
         item.button?.sendAction(on: .leftMouseDown) // open on press, like a menu
+        guard let button = item.button else { return }
+        button.image = menuBarIcon
+        glint.translatesAutoresizingMaskIntoConstraints = false
+        button.addSubview(glint)
+        // The star's centre in the 22×18 icon is (19.3, 15); offsets are from the icon's centre, y pointing down.
+        NSLayoutConstraint.activate([
+            glint.centerXAnchor.constraint(equalTo: button.centerXAnchor, constant: 8.3),
+            glint.centerYAnchor.constraint(equalTo: button.centerYAnchor, constant: -6),
+            glint.widthAnchor.constraint(equalToConstant: 8),
+            glint.heightAnchor.constraint(equalToConstant: 8),
+        ])
     }
 
     func update(awake on: Bool, missing: [Permission]) {
-        item.button?.image = menuBarIcon(awake: on)
+        glint.set(on, animated: shown) // no twinkle for the state Floe starts in
+        shown = true
         _ = panel
         awake.state = on ? .on : .off
         permissionCard.isHidden = missing.isEmpty
