@@ -124,6 +124,7 @@ final class Tray: NSObject {
     private let gpuLoad = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let memory = label("–", size: 22, weight: .bold)
     private let memoryUsed = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
+    private let memoryParts = ["App", "Wired", "Compressed", "Cached", "Swap", "Pressure"].map { ($0, label("–", size: 13, weight: .semibold)) }
     private let disk = label("–", size: 22, weight: .bold)
     private let diskUsed = (bar: NSProgressIndicator(), text: label("–", size: 11, color: .secondaryLabelColor))
     private let down = label("–", size: 22, weight: .bold)
@@ -276,6 +277,15 @@ final class Tray: NSObject {
                     self.show(self.memory, (String(format: "%.1f", gb(m.used)), "GB"), String(format: " of %.0f GB", gb(m.total)))
                     self.memoryUsed.bar.doubleValue = m.used / m.total * 100
                     self.memoryUsed.text.stringValue = String(format: "%.0f%%", m.used / m.total * 100)
+                    let size = { (v: Double) in v < 1_073_741_824 ? String(format: "%.0f MB", v / 1_048_576) : String(format: "%.1f GB", gb(v)) }
+                    for (part, v) in zip(self.memoryParts, [m.app, m.wired, m.compressed, m.cached, m.swap]) { part.1.stringValue = size(v) }
+                    let (level, color): (String, NSColor) = switch m.pressure {
+                    case 4: ("Critical", .systemRed)
+                    case 2: ("Warning", .systemOrange)
+                    default: ("Normal", .systemGreen)
+                    }
+                    self.memoryParts[5].1.stringValue = level
+                    self.memoryParts[5].1.textColor = color
                 }
                 if let d {
                     self.show(self.disk, bytes(d.free), " free")
@@ -307,11 +317,13 @@ final class Tray: NSObject {
             load.text.widthAnchor.constraint(equalToConstant: 32).isActive = true
             return stack([load.bar, load.text], vertical: false, spacing: 6)
         }
-        func tile(_ icon: String, _ name: String, _ value: NSView, _ footer: NSView, fill: Bool = true) -> NSView {
+        func tile(_ icon: String, _ name: String, _ value: NSView, _ footer: NSView, fill: Bool = true, detail: NSView? = nil) -> NSView {
             let head = stack([symbol(icon, size: 11), label(name, size: 12, color: .secondaryLabelColor)], vertical: false, spacing: 4)
-            let body = stack([head, value, footer], spacing: 4, align: .centerX)
+            let body = stack([head, value, footer] + (detail.map { [$0] } ?? []), spacing: 4, align: .centerX)
             body.setCustomSpacing(8, after: value)
+            body.setCustomSpacing(12, after: footer)
             if fill { footer.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true }
+            detail?.widthAnchor.constraint(equalTo: body.widthAnchor).isActive = true
             return Card(body, inset: 10, fill: NSColor.labelColor.withAlphaComponent(0.05), radius: 8, border: false)
         }
         // Each row splits its width equally between its tiles.
@@ -326,11 +338,26 @@ final class Tray: NSObject {
             stretch(s)
             return Card(s)
         }
+        // Memory's breakdown: two rows of three small figures under its bar.
+        func breakdown() -> NSView {
+            let cells = memoryParts.map { name, value -> NSView in
+                value.font = .monospacedDigitSystemFont(ofSize: 13, weight: .semibold)
+                return stack([value, label(name, size: 11, color: .secondaryLabelColor)], spacing: 1, align: .centerX)
+            }
+            let rows = [Array(cells[0..<3]), Array(cells[3...])].map { row -> NSView in
+                let s = stack(row, vertical: false, spacing: 4)
+                s.distribution = .fillEqually
+                return s
+            }
+            let s = stack(rows, spacing: 8)
+            stretch(s)
+            return s
+        }
         for v in [cpu, gpu, memory, disk, down] { v.font = .monospacedDigitSystemFont(ofSize: 22, weight: .bold) }
         up.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
         let temps = card("Temperature and usage", [
             [tile("cpu", "CPU", cpu, meter(cpuLoad)), tile("square.3.layers.3d", "GPU", gpu, meter(gpuLoad))],
-            [tile("memorychip", "Memory", memory, meter(memoryUsed))],
+            [tile("memorychip", "Memory", memory, meter(memoryUsed), detail: breakdown())],
         ])
         let io = card("Storage and network", [[
             tile("internaldrive", "SSD", disk, meter(diskUsed)),

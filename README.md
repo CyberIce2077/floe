@@ -30,10 +30,10 @@ All-in-one Mac utilities keep growing until the few features you rely on get slo
 - **Maximize windows.** The green button fills the screen instead of opening a new full-screen Space. Click again to restore, or ⌥-click for real full screen.
 - **Invert mouse scrolling.** Flips wheel mice (hello, Logitech) while the trackpad keeps natural scrolling.
 - **Stay awake.** Keeps the display and the Mac awake, one switch in the menu bar.
-- **System stats** in the menu bar panel: CPU and GPU temperature and usage, memory, free SSD space and network speed. Temperatures come straight from the SMC, the rest from the kernel and the GPU driver.
+- **System stats** in the menu bar panel: CPU and GPU temperature and usage, memory (app, wired, compressed, cached, swap and pressure), free SSD space and network speed. Temperatures come straight from the SMC, the rest from the kernel and the GPU driver.
 
 <p align="center">
-  <img src="docs/menu.png" width="320" alt="Menu bar panel with CPU and GPU temperature and usage, memory, SSD space, network speed, Stay awake, Settings and Quit">
+  <img src="docs/menu.png" width="320" alt="Menu bar panel with CPU and GPU temperature and usage, a memory breakdown, SSD space, network speed, Stay awake, Settings and Quit">
   &nbsp;&nbsp;
   <img src="docs/settings.png" width="400" alt="Settings window with permissions and feature switches">
 </p>
