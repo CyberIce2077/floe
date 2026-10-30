@@ -1,5 +1,45 @@
 import AppKit
 
+// The app icon's floe as a menu bar template: the berg above water solid, the hidden part below outlined.
+// Stay awake adds the icon's glint.
+func menuBarIcon(awake: Bool) -> NSImage {
+    func shape(_ pts: [(CGFloat, CGFloat)]) -> NSBezierPath {
+        let path = NSBezierPath()
+        path.move(to: NSPoint(x: pts[0].0, y: pts[0].1))
+        for q in pts.dropFirst() { path.line(to: NSPoint(x: q.0, y: q.1)) }
+        return path
+    }
+    let img = NSImage(size: NSSize(width: 22, height: 18), flipped: false) { _ in
+        NSColor.black.set()
+        let top = shape([(4.6, 9.6), (6.6, 13.2), (9.2, 16.8), (12.2, 17.6), (14.8, 14), (16, 9.6)])
+        top.close()
+        top.fill()
+        // A thin gap is the water surface; the faint body below is the part you don't see.
+        let below = shape([(3, 8.4), (17.6, 8.4), (19, 5.2), (16.4, 1.6), (10.6, 0.4), (4.6, 1.2), (1.8, 4.8)])
+        below.close()
+        NSColor.black.withAlphaComponent(0.4).setFill()
+        below.fill()
+        NSColor.black.setFill()
+        NSRect(x: 0, y: 8.6, width: 2.4, height: 0.8).fill()
+        NSRect(x: 18.2, y: 8.6, width: 2.4, height: 0.8).fill()
+        if awake {
+            let c = NSPoint(x: 19.3, y: 15), r: CGFloat = 2.6
+            let star = NSBezierPath()
+            for i in 0..<8 {
+                let a = CGFloat(i) * .pi / 4, d = i % 2 == 0 ? r : r * 0.3
+                let pt = NSPoint(x: c.x + d * sin(a), y: c.y + d * cos(a))
+                i == 0 ? star.move(to: pt) : star.line(to: pt)
+            }
+            star.close()
+            star.fill()
+        }
+        return true
+    }
+    img.isTemplate = true
+    img.accessibilityDescription = "Floe"
+    return img
+}
+
 private final class KeyPanel: NSPanel {
     override var canBecomeKey: Bool { true }
 }
@@ -29,9 +69,8 @@ final class Tray: NSObject {
         let fx = NSVisualEffectView()
         fx.material = .menu
         fx.state = .active
-        fx.wantsLayer = true
-        fx.layer?.cornerRadius = 14
-        fx.layer?.masksToBounds = true
+        // A layer corner radius doesn't clip the behind-window blur; a mask image does, and the shadow follows it.
+        fx.maskImage = roundedMask(radius: 14)
         let content = makeContent()
         content.translatesAutoresizingMaskIntoConstraints = false
         fx.addSubview(content)
@@ -54,7 +93,7 @@ final class Tray: NSObject {
     }
 
     func update(awake on: Bool, missing: [Permission]) {
-        item.button?.image = NSImage(systemSymbolName: on ? "snowflake.circle.fill" : "snowflake", accessibilityDescription: "Floe")
+        item.button?.image = menuBarIcon(awake: on)
         _ = panel
         awake.state = on ? .on : .off
         permissionCard.isHidden = missing.isEmpty
@@ -112,6 +151,7 @@ final class Tray: NSObject {
         let v = screen.visibleFrame
         let x = min(max(bw.frame.midX - size.width / 2, v.minX + 8), v.maxX - size.width - 8)
         panel.setFrame(NSRect(x: x, y: bw.frame.minY - 6 - size.height, width: size.width, height: size.height), display: true)
+        panel.invalidateShadow()
     }
 
     // Off the main thread so the panel never waits on the SMC.

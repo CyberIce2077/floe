@@ -77,6 +77,16 @@ final class FlatButton: NSButton {
     override var isHighlighted: Bool { didSet { needsDisplay = true } }
 }
 
+func roundedMask(radius r: CGFloat) -> NSImage {
+    let img = NSImage(size: NSSize(width: 2 * r + 1, height: 2 * r + 1), flipped: false) { rect in
+        NSBezierPath(roundedRect: rect, xRadius: r, yRadius: r).fill()
+        return true
+    }
+    img.capInsets = NSEdgeInsets(top: r, left: r, bottom: r, right: r)
+    img.resizingMode = .stretch
+    return img
+}
+
 func label(_ s: String, size: CGFloat = 13, weight: NSFont.Weight = .regular, color: NSColor = .labelColor) -> NSTextField {
     let l = NSTextField(labelWithString: s)
     l.font = .systemFont(ofSize: size, weight: weight)
