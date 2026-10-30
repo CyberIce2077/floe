@@ -190,9 +190,10 @@ final class Switcher {
         Task {
             guard let content = try? await SCShareableContent.excludingDesktopWindows(true, onScreenWindowsOnly: false) else { return }
             // Real windows on other Spaces have titles; offscreen helper windows don't.
+            // Background tabs are windows too, but they belong to no Space (minimized windows still do).
             let found = content.windows.filter {
                 $0.windowLayer == 0 && $0.frame.width > 80 && $0.frame.height > 60 && !($0.title ?? "").isEmpty
-                    && pids.contains($0.owningApplication?.processID ?? 0)
+                    && pids.contains($0.owningApplication?.processID ?? 0) && hasSpace($0.windowID)
             }
             let ordered = found.filter(\.isOnScreen) + found.filter { !$0.isOnScreen }
             var byPid: [pid_t: [Win]] = [:]
@@ -249,6 +250,16 @@ final class Switcher {
 }
 
 private let thumbSize = CGSize(width: 194, height: 113)
+
+@_silgen_name("CGSMainConnectionID")
+private func CGSMainConnectionID() -> Int32
+@_silgen_name("CGSCopySpacesForWindows")
+private func CGSCopySpacesForWindows(_ cid: Int32, _ mask: Int32, _ wids: CFArray) -> Unmanaged<CFArray>
+
+private func hasSpace(_ id: CGWindowID) -> Bool {
+    let spaces = CGSCopySpacesForWindows(CGSMainConnectionID(), 7 /* all Spaces */, [id] as CFArray).takeRetainedValue()
+    return CFArrayGetCount(spaces) > 0
+}
 
 final class SwitcherView: NSView {
     // Metrics in points.
