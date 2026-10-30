@@ -9,6 +9,8 @@ final class Settings: NSObject {
     private var switches: [String: NSSwitch] = [:]
     private var permissionViews: [Permission: (allowed: NSView, allow: NSView)] = [:]
     private var removeButton: NSView?
+    // Features that need Accessibility: their switch, lock and detail line.
+    private var gated: [(sw: NSSwitch, lock: NSView, note: NSTextField, detail: String)] = []
 
     func show() {
         if window == nil { window = makeWindow() }
@@ -26,6 +28,14 @@ final class Settings: NSObject {
             v.allow.isHidden = p.granted
         }
         removeButton?.isHidden = !Permission.allCases.contains(where: \.granted)
+        // Locked features keep showing the saved choice, so they come back as they were once allowed.
+        let locked = !Permission.accessibility.granted
+        for g in gated {
+            g.sw.isEnabled = !locked
+            g.lock.isHidden = !locked
+            g.note.stringValue = locked ? "Needs Accessibility" : g.detail
+            g.note.textColor = locked ? .systemOrange : .secondaryLabelColor
+        }
     }
 
     private func makeWindow() -> NSWindow {
@@ -37,6 +47,20 @@ final class Settings: NSObject {
             sw.identifier = NSUserInterfaceItemIdentifier(key)
             switches[key] = sw
             return sw
+        }
+        func gate(_ icon: String, _ title: String, _ detail: String, _ key: String, tint: NSColor) -> NSView {
+            let text = note(detail)
+            let lock = symbol("lock.fill", size: 12)
+            lock.addGestureRecognizer(NSClickGestureRecognizer(target: self, action: #selector(requestAccessibility)))
+            NSLayoutConstraint.activate([lock.widthAnchor.constraint(equalToConstant: 14), lock.heightAnchor.constraint(equalToConstant: 16)])
+            lock.toolTip = "Allow Accessibility to use \(title.lowercased())"
+            let sw = toggle(key)
+            gated.append((sw, lock, text, detail))
+            let accessory = NSStackView()
+            accessory.spacing = 6
+            accessory.setViews([lock, sw], in: .trailing)
+            accessory.widthAnchor.constraint(equalToConstant: 66).isActive = true // the switch stays put when the lock hides
+            return featureRow(icon, title, text, accessory, tint: tint)
         }
         func permission(_ p: Permission) -> NSView {
             let allowed = stack([symbol("checkmark.circle.fill", size: 12, color: .systemGreen),
@@ -85,11 +109,11 @@ final class Settings: NSObject {
                 featureRow("hand.raised.fill", "Accessibility", note("Required for ⌘Tab, scrolling and windows"), permission(.accessibility), tint: .systemBlue),
                 featureRow("rectangle.inset.filled.on.rectangle", "Screen Recording", note("Optional · live window previews in ⌘Tab"), permission(.screenRecording), tint: .systemPurple),
             ], footer: footer) + group("Windows", [
-                featureRow("rectangle.stack.fill", "Window switcher", note("⌘Tab with previews and window counts"), toggle("switcher"), tint: .systemIndigo),
-                featureRow("xmark", "Quit on close", note("Quit apps when their last window closes"), toggle("quitOnClose"), tint: .systemRed),
-                featureRow("arrow.up.left.and.arrow.down.right", "Maximize windows", note("Green button fills the screen · ⌥ for full screen"), toggle("maximize"), tint: .systemGreen),
+                gate("rectangle.stack.fill", "Window switcher", "⌘Tab with previews and window counts", "switcher", tint: .systemIndigo),
+                gate("xmark", "Quit on close", "Quit apps when their last window closes", "quitOnClose", tint: .systemRed),
+                gate("arrow.up.left.and.arrow.down.right", "Maximize windows", "Green button fills the screen · ⌥ for full screen", "maximize", tint: .systemGreen),
             ]) + group("Mouse", [
-                featureRow("computermouse.fill", "Invert mouse scrolling", note("Wheel mice only, trackpad stays natural"), toggle("invertScroll"), tint: .systemOrange),
+                gate("computermouse.fill", "Invert mouse scrolling", "Wheel mice only, trackpad stays natural", "invertScroll", tint: .systemOrange),
             ]) + group("System", [
                 featureRow("cup.and.heat.waves.fill", "Stay awake", note("Keep the display and Mac from sleeping"), toggle("stayAwake"), tint: .systemBrown),
                 featureRow("power", "Launch at login", note("Start Floe when you log in"), login, tint: .systemGray),
@@ -116,6 +140,8 @@ final class Settings: NSObject {
         prefs.set(sw.state == .on, forKey: sw.identifier!.rawValue)
         onChange()
     }
+
+    @objc private func requestAccessibility() { Permission.accessibility.request() }
 
     @objc private func requestPermission(_ sender: NSButton) {
         Permission(rawValue: sender.identifier!.rawValue)?.request()
