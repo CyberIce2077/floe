@@ -1,4 +1,5 @@
 APP := build/Floe.app
+BIN := $(APP)/Contents/MacOS/Floe
 ID := io.github.cyberice2077.floe
 KC := $(HOME)/Library/Keychains/floe-signing.keychain-db
 
@@ -9,16 +10,17 @@ SIGN ?= Floe Developer
 endif
 SIGN ?= -
 
-$(APP): Sources/*.swift Info.plist Resources/AppIcon.icns
+# Tracks the binary, not the bundle folder: the folder's timestamp never changes, so make would rebuild every time.
+$(BIN): Sources/*.swift Info.plist Resources/AppIcon.icns
 	mkdir -p $(APP)/Contents/MacOS $(APP)/Contents/Resources
-	swiftc -O -swift-version 5 -target arm64-apple-macos14 Sources/*.swift -o $(APP)/Contents/MacOS/Floe
+	swiftc -O -swift-version 5 -target arm64-apple-macos14 Sources/*.swift -o $(BIN)
 	cp Info.plist $(APP)/Contents/
 	cp Resources/AppIcon.icns $(APP)/Contents/Resources/
 	@[ "$(SIGN)" != "Floe Developer" ] || security unlock-keychain -p floe $(KC)
 	codesign --force --sign "$(SIGN)" $(if $(filter Floe,$(SIGN)),--keychain $(KC)) $(APP)
 
 # Permissions survive as long as the signature's requirement stays the same; reset them only when it changes.
-install: $(APP)
+install: $(BIN)
 	-pkill -x Floe
 	@old=$$(codesign -d -r- /Applications/Floe.app 2>&1 | grep designated); \
 	new=$$(codesign -d -r- $(APP) 2>&1 | grep designated); \
