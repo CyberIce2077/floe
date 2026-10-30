@@ -103,7 +103,8 @@ Each row switches to *Allowed* as soon as you grant it. Until Accessibility is a
 ### Update
 
 ```sh
-brew upgrade floe
+brew outdated floe   # is there a newer Floe?
+brew upgrade floe    # update Floe only, nothing else
 ```
 
 Every release is signed with the same identity, so macOS keeps Floe's permissions across updates.
