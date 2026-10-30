@@ -7,21 +7,25 @@ A tiny macOS menu bar app that does a few things fast:
 - **Maximize windows**: the green button fills the screen instead of creating a full-screen Space; click again to restore. ⌥-click for real full screen.
 - **Invert mouse scrolling**: reverses wheel mice only; the trackpad keeps natural scrolling.
 - **Stay awake**: keeps the display and the Mac from sleeping.
-- **CPU / GPU temperatures** in the menu (Apple Silicon), read only while the menu is open.
+- **CPU / GPU temperatures** in the menu bar panel (Apple Silicon), read only while it's open.
 
-Native Swift/AppKit, no dependencies, about 800 lines.
+Native Swift/AppKit, no dependencies, about 1300 lines.
 
 ## Build
 
 Requires macOS 14+ and the Xcode command line tools.
 
 ```sh
+make cert      # once: a local signing identity so macOS remembers permissions across rebuilds
 make install   # builds, copies to /Applications and launches
 ```
 
-On first launch, grant **Accessibility** (needed for the switcher, scrolling, maximize and quit on close). On first ⌘Tab, grant **Screen Recording** for window previews (icons and counts work without it).
+On first launch Floe opens Settings and shows what it needs, with an **Allow** button for each:
 
-Ad-hoc signed builds lose their permissions on every rebuild, so `make install` resets them and macOS asks again. Pass `SIGN="Your Identity"` to keep them.
+- **Accessibility** turns on the switcher, scrolling, maximize and quit on close.
+- **Screen Recording** is optional and only adds live window previews to ⌘Tab.
+
+Each row flips to *Allowed* as soon as you grant it in System Settings. Accessibility takes effect right away; for Screen Recording, macOS may offer to reopen Floe. Without `make cert`, builds are ad-hoc signed and macOS asks again after every install.
 
 ## License
 

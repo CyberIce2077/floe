@@ -21,7 +21,6 @@ final class Switcher {
     private var active = false
     private var session = 0
     private var mru: [pid_t] = []
-    private var askedCapture = false
 
     private lazy var view = SwitcherView()
     private lazy var panel: NSPanel = {
@@ -181,10 +180,7 @@ final class Switcher {
     }
 
     private func loadWindows() {
-        guard CGPreflightScreenCaptureAccess() else {
-            if !askedCapture { askedCapture = true; CGRequestScreenCaptureAccess() }
-            return
-        }
+        guard CGPreflightScreenCaptureAccess() else { return } // previews are opt-in from Settings
         let pids = Set(apps.map(\.processIdentifier)), s = session
         let screens = NSScreen.screens.map(\.frame.size)
         Task {
