@@ -1,4 +1,5 @@
 import AppKit
+import Carbon
 import IOKit.pwr_mgt
 
 @_silgen_name("CGSSetSymbolicHotKeyEnabled")
@@ -13,6 +14,7 @@ final class App: NSObject, NSApplicationDelegate {
     private var awakeID: IOPMAssertionID = 0
     private var permissionTimer: Timer?
     private var granted: [Bool] = []
+    private var nativeOn: Bool?
 
     func applicationDidFinishLaunching(_: Notification) {
         // One hung app must never freeze us: cap every AX call.
@@ -26,6 +28,8 @@ final class App: NSObject, NSApplicationDelegate {
         settings.onRemovePermissions = { [weak self] in self?.removePermissions() }
         _ = Switcher.shared // start tracking app activation order now
         apply()
+        // A focused password field turns on secure input, which hides keys from our tap; the Dock's ⌘Tab still works.
+        Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in self?.syncNativeSwitcher() }
         // First run (or a lost grant): explain what's needed instead of a bare system prompt.
         if !Permission.accessibility.granted { settings.show() }
     }
@@ -40,7 +44,7 @@ final class App: NSObject, NSApplicationDelegate {
         invertScroll = prefs.bool(forKey: "invertScroll")
         maximizeOn = prefs.bool(forKey: "maximize")
         switcherOn = prefs.bool(forKey: "switcher") && eventTapRunning
-        nativeSwitcher(!switcherOn)
+        syncNativeSwitcher()
         AutoQuit.shared.enabled = prefs.bool(forKey: "quitOnClose") && trusted
 
         let awake = prefs.bool(forKey: "stayAwake")
@@ -79,6 +83,13 @@ final class App: NSObject, NSApplicationDelegate {
         nativeSwitcher(true) // without Accessibility the tap goes deaf, so hand ⌘Tab back first
         Permission.reset("All")
         NSApp.terminate(nil)
+    }
+
+    private func syncNativeSwitcher() {
+        let on = !switcherOn || IsSecureEventInputEnabled()
+        guard on != nativeOn else { return }
+        nativeOn = on
+        nativeSwitcher(on)
     }
 
     // ⌘Tab / ⌘⇧Tab belong to the Dock unless we switch its hotkeys off.
