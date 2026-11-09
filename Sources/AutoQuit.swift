@@ -65,8 +65,10 @@ private func onEvent(_ obs: AXObserver, _ el: AXUIElement, _ note: CFString, _: 
     AXUIElementGetPid(el, &pid)
     // Wait out apps that swap one window for another (welcome screens, tab tear-offs).
     DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
+        // nil means AX failed (app busy, e.g. behind a system password prompt), not that it has no windows.
+        let windows: [AXUIElement]? = AXUIElementCreateApplication(pid).get(kAXWindowsAttribute)
         guard AutoQuit.shared.enabled, let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated,
-              AXUIElementCreateApplication(pid).windows.isEmpty else { return }
+              windows?.isEmpty == true else { return }
         app.terminate()
     }
 }
